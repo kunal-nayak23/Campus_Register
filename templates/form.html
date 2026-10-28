@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% macro field_block(field, col='col-md-6', icon=None, help=None) %}
+  <div class="{{ col }}">
+    {{ field.label(class_='form-label' ~ (' req' if field.flags.required else '')) }}
+    <div class="input-group has-validation">
+      {% if icon %}<span class="input-group-text"><i class="bi {{ icon }}"></i></span>{% endif %}
+      {% set base_cls = 'form-select' if field.type == 'SelectField' else 'form-control' %}
+      {{ field(class_=base_cls ~ (' is-invalid' if field.errors else ''), aria_describedby=field.id ~ '-feedback') }}
+      <div class="invalid-feedback" id="{{ field.id }}-feedback">{% for error in field.errors %}{{ error }} {% endfor %}</div>
+    </div>
+    {% if help %}<div class="form-text">{{ help }}</div>{% endif %}
+  </div>
+{% endmacro %}
+{% block content %}
+  <a class="back-link" href="{{ url_for('index') }}"><i class="bi bi-arrow-left me-1"></i>Back to dashboard</a>
+
+  <div class="row g-4 mt-1">
+    <div class="col-lg-8">
+      <div class="form-card">
+        <h1 class="page-title mb-1">{{ title }}</h1>
+        <p class="text-body-secondary mb-4">
+          {% if mode == 'edit' %}Update the details below. The registration number and email must stay unique.{% else %}Fields marked with a dot are required. Phone number is optional.{% endif %}
+        </p>
+
+        <form method="post" novalidate id="studentForm">
+          {{ form.hidden_tag() }}
+
+          <fieldset class="form-section">
+            <legend>Identity</legend>
+            <div class="row g-3">
+              {{ field_block(form.registration_no, icon='bi-hash', help='Letters, numbers and hyphens. Saved in capitals.') }}
+              {{ field_block(form.full_name, icon='bi-person') }}
+            </div>
+          </fieldset>
+
+          <fieldset class="form-section">
+            <legend>Contact</legend>
+            <div class="row g-3">
+              {{ field_block(form.email, icon='bi-envelope') }}
+              {{ field_block(form.phone, icon='bi-telephone', help='10 digits, no country code.') }}
+            </div>
+          </fieldset>
+
+          <fieldset class="form-section">
+            <legend>Academic</legend>
+            <div class="row g-3">
+              {{ field_block(form.course, icon='bi-journal-bookmark') }}
+              {{ field_block(form.study_year, icon='bi-calendar3') }}
+            </div>
+          </fieldset>
+
+          <div class="d-flex flex-wrap gap-2 justify-content-end mt-4">
+            <a href="{{ url_for('index') }}" class="btn btn-light">Cancel</a>
+            <button class="btn btn-accent px-4" type="submit" id="submitBtn"><i class="bi {{ 'bi-check2-circle' if mode == 'edit' else 'bi-person-plus-fill' }} me-1"></i>{{ submit_label }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <aside class="preview-card sticky-lg-top" aria-label="Record preview">
+        <p class="preview-label">Record preview</p>
+        <div class="d-flex align-items-center gap-3 mb-3">
+          <span class="avatar avatar-lg" id="pvAvatar" aria-hidden="true">?</span>
+          <div class="min-w-0">
+            <div class="fw-semibold text-truncate" id="pvName">Student name</div>
+            <span class="reg-id" id="pvReg">REG-NO</span>
+          </div>
+        </div>
+        <dl class="detail-list small mb-3">
+          <dt>Email</dt><dd id="pvEmail">Not entered</dd>
+          <dt>Phone</dt><dd id="pvPhone">Not provided</dd>
+          <dt>Course</dt><dd id="pvCourse">Not selected</dd>
+          <dt>Year</dt><dd id="pvYear">Not selected</dd>
+        </dl>
+        <div class="progress-wrap">
+          <div class="d-flex justify-content-between small mb-1"><span>Required fields</span><span id="pvProgressText">0 of 5</span></div>
+          <div class="progress" role="progressbar" aria-label="Required fields completed" aria-valuemin="0" aria-valuemax="5" id="pvProgress"><div class="progress-bar" style="width: 0%"></div></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const form = document.getElementById("studentForm");
+  const f = id => document.getElementById(id);
+  const fields = {
+    registration_no: { el: f("registration_no"), test: v => /^[A-Za-z0-9-]{3,20}$/.test(v), msg: "Use 3 to 20 letters, numbers or hyphens." },
+    full_name: { el: f("full_name"), test: v => v.length >= 2 && v.length <= 100, msg: "Enter the full name (at least 2 characters)." },
+    email: { el: f("email"), test: v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), msg: "Enter a valid email address." },
+    phone: { el: f("phone"), test: v => v === "" || /^[0-9]{10}$/.test(v), msg: "Enter a 10-digit phone number.", optional: true },
+    course: { el: f("course"), test: v => v !== "", msg: "Select a course." },
+    study_year: { el: f("study_year"), test: v => v !== "0" && v !== "", msg: "Select the year of study." },
+  };
+  const touched = new Set();
+
+  // Inline input helpers.
+  fields.phone.el.addEventListener("input", e => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10); });
+  fields.registration_no.el.addEventListener("input", e => { const p = e.target.selectionStart; e.target.value = e.target.value.toUpperCase(); e.target.setSelectionRange(p, p); });
+
+  function validate(name, show) {
+    const c = fields[name], v = c.el.value.trim(), ok = c.test(v);
+    if (show) {
+      c.el.classList.toggle("is-invalid", !ok);
+      c.el.classList.toggle("is-valid", ok && (v !== "" || !c.optional));
+      if (!ok) f(c.el.id + "-feedback").textContent = c.msg;
+    }
+    return ok;
+  }
+
+  const yearNames = {1: "1st year", 2: "2nd year", 3: "3rd year", 4: "4th year"};
+  function preview() {
+    const name = fields.full_name.el.value.trim();
+    f("pvName").textContent = name || "Student name";
+    f("pvAvatar").textContent = name ? name.split(/\s+/).map(p => p[0]).join("").slice(0, 2).toUpperCase() : "?";
+    const yr = fields.study_year.el.value;
+    f("pvAvatar").className = "avatar avatar-lg" + (yr !== "0" ? " year-" + yr : "");
+    f("pvReg").textContent = fields.registration_no.el.value.trim() || "REG-NO";
+    f("pvEmail").textContent = fields.email.el.value.trim().toLowerCase() || "Not entered";
+    f("pvPhone").textContent = fields.phone.el.value || "Not provided";
+    f("pvCourse").textContent = fields.course.el.value || "Not selected";
+    f("pvYear").textContent = yearNames[yr] || "Not selected";
+    const req = Object.keys(fields).filter(k => !fields[k].optional);
+    const done = req.filter(k => fields[k].el.value.trim() && validate(k, false)).length;
+    f("pvProgressText").textContent = `${done} of ${req.length}`;
+    f("pvProgress").setAttribute("aria-valuenow", done);
+    f("pvProgress").firstElementChild.style.width = (done / req.length * 100) + "%";
+  }
+
+  Object.entries(fields).forEach(([name, c]) => {
+    const evt = c.el.tagName === "SELECT" ? "change" : "input";
+    c.el.addEventListener(evt, () => { if (touched.has(name)) validate(name, true); preview(); });
+    c.el.addEventListener("blur", () => { touched.add(name); validate(name, true); });
+  });
+
+  form.addEventListener("submit", e => {
+    const bad = Object.keys(fields).filter(n => !validate(n, true));
+    if (bad.length) { e.preventDefault(); fields[bad[0]].el.focus(); return; }
+    const btn = f("submitBtn");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving';
+  });
+
+  preview();
+})();
+</script>
+{% endblock %}

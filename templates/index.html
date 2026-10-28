@@ -1,0 +1,293 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+  {% set year_names = {1: '1st year', 2: '2nd year', 3: '3rd year', 4: '4th year'} %}
+
+  <section class="hero mb-4 mb-lg-5">
+    <div class="row g-4 align-items-stretch">
+      <div class="col-lg-7">
+        <div class="hero-main h-100">
+          <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+            <div>
+              <h1 class="page-title">Student Dashboard</h1>
+              <p class="text-body-secondary mb-0">Register, find and update student records.</p>
+            </div>
+            <a href="{{ url_for('create_student') }}" class="btn btn-accent btn-lg"><i class="bi bi-person-plus-fill me-2"></i>Register student</a>
+          </div>
+
+          <div class="headcount mt-4">
+            <span class="headcount-number" data-count="{{ total_students }}">{{ total_students }}</span>
+            <span class="headcount-label">student{{ '' if total_students == 1 else 's' }} registered</span>
+          </div>
+
+          <div class="year-bar mt-3" role="img" aria-label="Students by year of study">
+            {% for y in [1, 2, 3, 4] %}
+              {% set n = year_counts.get(y, 0) %}
+              {% if n %}<span class="year-seg year-{{ y }}" style="flex-grow: {{ n }}" title="{{ year_names[y] }}: {{ n }}"></span>{% endif %}
+            {% endfor %}
+            {% if not total_students %}<span class="year-seg year-empty"></span>{% endif %}
+          </div>
+          <ul class="year-legend list-unstyled d-flex flex-wrap gap-3 mt-2 mb-0">
+            {% for y in [1, 2, 3, 4] %}
+              <li><span class="dot year-{{ y }}"></span>{{ year_names[y] }} <strong>{{ year_counts.get(y, 0) }}</strong></li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+
+      <div class="col-lg-5">
+        <div class="side-card h-100">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h6 mb-0 fw-semibold">By course</h2>
+            <span class="db-pill" title="Database currently connected"><i class="bi bi-database me-1"></i>{{ db_engine }}</span>
+          </div>
+          {% if course_counts %}
+            <ul class="list-unstyled course-list mb-0">
+              {% for course, n in course_counts %}
+                <li>
+                  <button type="button" class="course-row" data-course-filter="{{ course }}" title="Show only {{ course }}">
+                    <span class="course-name">{{ course }}</span>
+                    <span class="course-track"><span class="course-fill" style="width: {{ (n / total_students * 100) | round(1) }}%"></span></span>
+                    <span class="course-n">{{ n }}</span>
+                  </button>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-body-secondary small mb-0">Course totals appear here after the first registration.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="records" aria-labelledby="records-heading">
+    <div class="records-toolbar">
+      <h2 id="records-heading" class="h5 mb-0 fw-semibold me-auto">Student records <span class="badge rounded-pill text-bg-secondary-subtle ms-1" id="visibleCount">{{ students|length }}</span></h2>
+
+      <form action="{{ url_for('index') }}" method="get" class="search-box" role="search">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <label for="search" class="visually-hidden">Search students</label>
+        <input id="search" type="search" name="q" value="{{ q }}" class="form-control" placeholder="Search name, registration no. or email" maxlength="100" autocomplete="off">
+        <kbd class="d-none d-md-inline">/</kbd>
+      </form>
+
+      <label for="courseFilter" class="visually-hidden">Filter by course</label>
+      <select id="courseFilter" class="form-select filter-select">
+        <option value="">All courses</option>
+        {% for course, n in course_counts %}<option value="{{ course }}">{{ course }}</option>{% endfor %}
+      </select>
+
+      <label for="yearFilter" class="visually-hidden">Filter by year</label>
+      <select id="yearFilter" class="form-select filter-select">
+        <option value="">All years</option>
+        {% for y in [1, 2, 3, 4] %}<option value="{{ y }}">{{ year_names[y] }}</option>{% endfor %}
+      </select>
+
+      {% if q %}<a class="btn btn-link btn-sm" href="{{ url_for('index') }}">Clear search</a>{% endif %}
+    </div>
+
+    <div class="table-card">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 records-table" id="recordsTable">
+          <thead>
+            <tr>
+              <th scope="col"><button type="button" class="sort-btn" data-sort="name">Student <i class="bi bi-arrow-down-up"></i></button></th>
+              <th scope="col" class="d-none d-sm-table-cell"><button type="button" class="sort-btn" data-sort="reg">Registration no. <i class="bi bi-arrow-down-up"></i></button></th>
+              <th scope="col" class="d-none d-md-table-cell"><button type="button" class="sort-btn" data-sort="course">Course <i class="bi bi-arrow-down-up"></i></button></th>
+              <th scope="col" class="d-none d-md-table-cell"><button type="button" class="sort-btn" data-sort="year">Year <i class="bi bi-arrow-down-up"></i></button></th>
+              <th scope="col" class="d-none d-xl-table-cell">Email</th>
+              <th scope="col" class="text-end"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for student in students %}
+              <tr class="student-row" tabindex="0"
+                  data-name="{{ student.full_name }}" data-reg="{{ student.registration_no }}" data-email="{{ student.email }}"
+                  data-phone="{{ student.phone or '' }}" data-course="{{ student.course }}" data-year="{{ student.study_year }}"
+                  data-created="{{ student.created_at.strftime('%d %b %Y, %I:%M %p') }}"
+                  data-edit-url="{{ url_for('edit_student', student_id=student.id) }}"
+                  data-delete-url="{{ url_for('delete_student', student_id=student.id) }}">
+                <td>
+                  <div class="d-flex align-items-center gap-3">
+                    <span class="avatar year-{{ student.study_year }}" aria-hidden="true">{{ (student.full_name.split()|map('first')|join(''))[:2]|upper }}</span>
+                    <div class="min-w-0">
+                      <div class="fw-semibold text-truncate student-name">{{ student.full_name }}</div>
+                      <div class="small text-body-secondary d-xl-none text-truncate">{{ student.email }}</div>
+                      <div class="small text-body-secondary d-md-none"><span class="reg-id d-block d-sm-none">{{ student.registration_no }}</span>{{ student.course }}, {{ year_names.get(student.study_year, student.study_year) }}</div>
+                    </div>
+                  </div>
+                </td>
+                <td class="d-none d-sm-table-cell"><span class="reg-id">{{ student.registration_no }}</span></td>
+                <td class="d-none d-md-table-cell">{{ student.course }}</td>
+                <td class="d-none d-md-table-cell"><span class="year-chip year-{{ student.study_year }}">{{ year_names.get(student.study_year, student.study_year) }}</span></td>
+                <td class="d-none d-xl-table-cell text-body-secondary">{{ student.email }}</td>
+                <td class="text-end text-nowrap">
+                  <a class="btn btn-icon" href="{{ url_for('edit_student', student_id=student.id) }}" title="Edit {{ student.full_name }}" aria-label="Edit {{ student.full_name }}"><i class="bi bi-pencil-square"></i></a>
+                  <button type="button" class="btn btn-icon btn-icon-danger js-delete" title="Delete {{ student.full_name }}" aria-label="Delete {{ student.full_name }}"><i class="bi bi-trash3"></i></button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="empty-state {% if students %}d-none{% endif %}" id="emptyState">
+        <i class="bi bi-person-vcard empty-icon"></i>
+        {% if q or students %}
+          <h3 class="h6 fw-semibold">No students match these filters</h3>
+          <p class="text-body-secondary small">Change the search text or reset the course and year filters.</p>
+        {% else %}
+          <h3 class="h6 fw-semibold">No students registered yet</h3>
+          <p class="text-body-secondary small">Register the first student to start the list.</p>
+          <a href="{{ url_for('create_student') }}" class="btn btn-accent btn-sm"><i class="bi bi-person-plus-fill me-1"></i>Register student</a>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  {# Student detail drawer #}
+  <div class="offcanvas offcanvas-end detail-drawer" tabindex="-1" id="studentDrawer" aria-labelledby="drawerName">
+    <div class="offcanvas-header">
+      <div class="d-flex align-items-center gap-3">
+        <span class="avatar avatar-lg" id="drawerAvatar" aria-hidden="true"></span>
+        <div>
+          <h2 class="h5 mb-0" id="drawerName"></h2>
+          <span class="reg-id" id="drawerReg"></span>
+        </div>
+      </div>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body">
+      <dl class="detail-list">
+        <dt>Email</dt><dd id="drawerEmail"></dd>
+        <dt>Phone</dt><dd id="drawerPhone"></dd>
+        <dt>Course</dt><dd id="drawerCourse"></dd>
+        <dt>Year of study</dt><dd id="drawerYear"></dd>
+        <dt>Registered on</dt><dd id="drawerCreated"></dd>
+      </dl>
+      <div class="d-flex gap-2 mt-4">
+        <a class="btn btn-accent flex-grow-1" id="drawerEdit" href="#"><i class="bi bi-pencil-square me-1"></i>Edit details</a>
+        <button type="button" class="btn btn-outline-danger" id="drawerDelete"><i class="bi bi-trash3 me-1"></i>Delete</button>
+      </div>
+    </div>
+  </div>
+
+  {# Delete confirmation #}
+  <div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <form class="modal-content" method="post" id="deleteForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body p-4">
+          <div class="danger-badge mb-3"><i class="bi bi-trash3"></i></div>
+          <h2 class="h5 fw-semibold" id="deleteTitle">Delete <span id="deleteName"></span>?</h2>
+          <p class="text-body-secondary mb-0">The record for <strong id="deleteReg"></strong> will be removed from the database permanently.</p>
+        </div>
+        <div class="modal-footer border-0 pt-0 px-4 pb-4">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Keep record</button>
+          <button type="submit" class="btn btn-danger"><i class="bi bi-trash3 me-1"></i>Delete student</button>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const yearNames = {1: "1st year", 2: "2nd year", 3: "3rd year", 4: "4th year"};
+  const tbody = document.querySelector("#recordsTable tbody");
+  const rows = Array.from(tbody.querySelectorAll(".student-row"));
+  const search = document.getElementById("search");
+  const courseFilter = document.getElementById("courseFilter");
+  const yearFilter = document.getElementById("yearFilter");
+  const visibleCount = document.getElementById("visibleCount");
+  const emptyState = document.getElementById("emptyState");
+  const hasRecords = rows.length > 0;
+
+  // Live filtering (search + course + year) without reloading the page.
+  function applyFilters() {
+    const term = search.value.trim().toLowerCase();
+    const course = courseFilter.value, year = yearFilter.value;
+    let shown = 0;
+    rows.forEach(r => {
+      const d = r.dataset;
+      const ok = (!term || [d.name, d.reg, d.email].some(v => v.toLowerCase().includes(term)))
+        && (!course || d.course === course) && (!year || d.year === year);
+      r.classList.toggle("d-none", !ok);
+      if (ok) shown++;
+    });
+    visibleCount.textContent = shown;
+    if (hasRecords) emptyState.classList.toggle("d-none", shown > 0);
+  }
+  search.addEventListener("input", applyFilters);
+  courseFilter.addEventListener("change", applyFilters);
+  yearFilter.addEventListener("change", applyFilters);
+  document.querySelectorAll("[data-course-filter]").forEach(btn => btn.addEventListener("click", () => {
+    courseFilter.value = courseFilter.value === btn.dataset.courseFilter ? "" : btn.dataset.courseFilter;
+    document.querySelectorAll("[data-course-filter]").forEach(b => b.classList.toggle("active", b.dataset.courseFilter === courseFilter.value));
+    applyFilters();
+    document.getElementById("records-heading").scrollIntoView({behavior: "smooth", block: "start"});
+  }));
+  document.addEventListener("keydown", e => {
+    if (e.key === "/" && !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) { e.preventDefault(); search.focus(); }
+  });
+
+  // Column sorting.
+  let sortKey = null, asc = true;
+  document.querySelectorAll(".sort-btn").forEach(btn => btn.addEventListener("click", () => {
+    const key = btn.dataset.sort;
+    asc = sortKey === key ? !asc : true; sortKey = key;
+    document.querySelectorAll(".sort-btn").forEach(b => { b.classList.remove("sorted"); b.querySelector("i").className = "bi bi-arrow-down-up"; });
+    btn.classList.add("sorted"); btn.querySelector("i").className = asc ? "bi bi-sort-up" : "bi bi-sort-down";
+    rows.sort((a, b) => {
+      const x = a.dataset[key], y = b.dataset[key];
+      const cmp = key === "year" ? x - y : x.localeCompare(y, undefined, {numeric: true, sensitivity: "base"});
+      return asc ? cmp : -cmp;
+    }).forEach(r => tbody.appendChild(r));
+  }));
+
+  // Detail drawer and delete modal.
+  const drawer = new bootstrap.Offcanvas("#studentDrawer");
+  const modal = new bootstrap.Modal("#deleteModal");
+  const $ = id => document.getElementById(id);
+  let current = null;
+  const initials = n => n.split(/\s+/).map(p => p[0]).join("").slice(0, 2).toUpperCase();
+
+  function openDrawer(row) {
+    current = row; const d = row.dataset;
+    $("drawerAvatar").textContent = initials(d.name);
+    $("drawerAvatar").className = "avatar avatar-lg year-" + d.year;
+    $("drawerName").textContent = d.name; $("drawerReg").textContent = d.reg;
+    $("drawerEmail").textContent = d.email; $("drawerPhone").textContent = d.phone || "Not provided";
+    $("drawerCourse").textContent = d.course; $("drawerYear").textContent = yearNames[d.year] || d.year;
+    $("drawerCreated").textContent = d.created; $("drawerEdit").href = d.editUrl;
+    drawer.show();
+  }
+  function openDelete(row) {
+    const d = row.dataset;
+    $("deleteForm").action = d.deleteUrl; $("deleteName").textContent = d.name; $("deleteReg").textContent = d.reg;
+    drawer.hide(); modal.show();
+  }
+  rows.forEach(row => {
+    row.addEventListener("click", e => { if (!e.target.closest("a, button")) openDrawer(row); });
+    row.addEventListener("keydown", e => { if (e.key === "Enter" && e.target === row) openDrawer(row); });
+    row.querySelector(".js-delete").addEventListener("click", () => openDelete(row));
+  });
+  $("drawerDelete").addEventListener("click", () => current && openDelete(current));
+  $("deleteForm").addEventListener("submit", e => {
+    const btn = e.submitter || e.target.querySelector("[type=submit]");
+    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting';
+  });
+
+  // Count-up on the headcount, once, on load.
+  const num = document.querySelector(".headcount-number");
+  const target = +num.dataset.count;
+  if (target > 1 && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const start = performance.now(), dur = 700;
+    const tick = t => { const p = Math.min((t - start) / dur, 1); num.textContent = Math.round(target * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(tick); };
+    num.textContent = "0"; requestAnimationFrame(tick);
+  }
+})();
+</script>
+{% endblock %}
